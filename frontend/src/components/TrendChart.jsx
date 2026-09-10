@@ -55,7 +55,7 @@ export default function TrendChart({ points, granularity }) {
             borderRadius: 4,
           }}
         />
-        <Bar dataKey="count" fill="#B8862B" radius={[2, 2, 0, 0]} maxBarSize={28} />
+        <Bar dataKey="count" fill="#1E3A5F" radius={[2, 2, 0, 0]} maxBarSize={28} />
       </BarChart>
     </ResponsiveContainer>
   );

@@ -1,5 +1,5 @@
 import numpy as np
-from sklearn.cluster import HDBSCAN
+from sklearn.cluster import AgglomerativeClustering
 from sqlalchemy.orm import Session
 
 from app.config import settings
@@ -44,47 +44,83 @@ def assign_entry(db: Session, entry: FeedbackEntry) -> bool:
     return False
 
 
-def discover_new_themes(db: Session) -> list[Theme]:
-    pool = db.query(FeedbackEntry).filter(FeedbackEntry.theme_id.is_(None)).all()
+def _cluster_pass(pool: list[FeedbackEntry], embeddings: np.ndarray) -> list[np.ndarray]:
+    """One clustering + purification pass. Returns a list of boolean masks,
+    one per accepted theme, into the given pool/embeddings arrays."""
 
-    if len(pool) < settings.min_entries_for_new_theme:
-        return []
-
-    embeddings = np.array([list(e.embedding) for e in pool])
-
-    clusterer = HDBSCAN(
-        min_cluster_size=max(settings.min_entries_for_new_theme, 3),
-        min_samples=2,
+    # Cluster loosely first (linkage chaining catches distant-but-related
+    # items), then purify each group against its own true centroid so
+    # members that don't actually belong get excluded rather than forcing
+    # an impure label on the whole group.
+    clusterer = AgglomerativeClustering(
+        n_clusters=None,
+        distance_threshold=0.75,
+        linkage="average",
         metric="cosine",
     )
     labels = clusterer.fit_predict(embeddings)
 
-    new_themes: list[Theme] = []
+    accepted_masks = []
 
     for cluster_id in sorted(set(labels)):
-        if cluster_id == -1:
+        member_mask = labels == cluster_id
+        if member_mask.sum() < settings.min_entries_for_new_theme:
             continue
 
-        member_indices = [i for i, lbl in enumerate(labels) if lbl == cluster_id]
-        members = [pool[i] for i in member_indices]
-        member_embeddings = embeddings[member_indices]
-        centroid = member_embeddings.mean(axis=0)
+        cluster_embeddings = embeddings[member_mask]
+        rough_centroid = cluster_embeddings.mean(axis=0)
 
-        label_info = generate_theme_label([m.content for m in members])
+        norms = np.linalg.norm(cluster_embeddings, axis=1) * np.linalg.norm(rough_centroid)
+        norms[norms == 0] = 1e-9
+        similarities = (cluster_embeddings @ rough_centroid) / norms
 
-        theme = Theme(
-            label=label_info.get("label", "teme e re"),
-            summary=label_info.get("summary"),
-            centroid=centroid.tolist(),
-            entry_count=len(members),
-        )
-        db.add(theme)
+        keep = similarities >= settings.cluster_similarity_threshold
+        if keep.sum() < settings.min_entries_for_new_theme:
+            continue
+
+        full_mask = np.zeros(len(embeddings), dtype=bool)
+        full_mask[np.where(member_mask)[0][keep]] = True
+        accepted_masks.append(full_mask)
+
+    return accepted_masks
+
+
+def discover_new_themes(db: Session) -> list[Theme]:
+    new_themes: list[Theme] = []
+
+    for _ in range(5):  # safety cap: at most 5 refinement rounds per call
+        pool = db.query(FeedbackEntry).filter(FeedbackEntry.theme_id.is_(None)).all()
+        if len(pool) < settings.min_entries_for_new_theme:
+            break
+
+        embeddings = np.array([list(e.embedding) for e in pool])
+        masks = _cluster_pass(pool, embeddings)
+
+        if not masks:
+            break
+
+        for mask in masks:
+            members = [m for m, keep in zip(pool, mask) if keep]
+            member_embeddings = embeddings[mask]
+            centroid = member_embeddings.mean(axis=0)
+
+            label_info = generate_theme_label([m.content for m in members])
+
+            theme = Theme(
+                label=label_info.get("label", "new theme"),
+                summary=label_info.get("summary"),
+                centroid=centroid.tolist(),
+                entry_count=len(members),
+            )
+            db.add(theme)
+            db.flush()
+
+            for member in members:
+                member.theme_id = theme.id
+                db.add(member)
+
+            new_themes.append(theme)
+
         db.flush()
-
-        for member in members:
-            member.theme_id = theme.id
-            db.add(member)
-
-        new_themes.append(theme)
 
     return new_themes

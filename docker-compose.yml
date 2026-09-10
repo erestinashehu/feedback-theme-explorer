@@ -1,0 +1,58 @@
+services:
+  db:
+    image: ankane/pgvector:latest
+    container_name: feedback_db
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: feedback
+      POSTGRES_PASSWORD: feedback
+      POSTGRES_DB: feedback_explorer
+    ports:
+      - "5432:5432"
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U feedback"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+
+  db-init:
+    image: ankane/pgvector:latest
+    depends_on:
+      db:
+        condition: service_healthy
+    entrypoint: ["psql", "-h", "db", "-U", "feedback", "-d", "feedback_explorer", "-c", "CREATE EXTENSION IF NOT EXISTS vector;"]
+    environment:
+      PGPASSWORD: feedback
+
+  backend:
+    build: ./backend
+    container_name: feedback_backend
+    restart: unless-stopped
+    env_file:
+      - .env
+    environment:
+      DATABASE_URL: postgresql://feedback:feedback@db:5432/feedback_explorer
+    ports:
+      - "8000:8000"
+    depends_on:
+      db-init:
+        condition: service_completed_successfully
+    volumes:
+      - model_cache:/root/.cache
+
+  frontend:
+    build: ./frontend
+    container_name: feedback_frontend
+    restart: unless-stopped
+    environment:
+      VITE_API_URL: http://localhost:8000
+    ports:
+      - "5173:5173"
+    depends_on:
+      - backend
+
+volumes:
+  pgdata:
+  model_cache:

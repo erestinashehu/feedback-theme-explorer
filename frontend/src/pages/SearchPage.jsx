@@ -59,14 +59,14 @@ export default function SearchPage() {
   };
 
   return (
-    <div className="max-w-2xl">
-      <h2 className="font-serif text-2xl mb-1">Ask your feedback</h2>
-      <p className="text-sm text-muted mb-4">
+    <div>
+      <h2 className="text-lg font-medium mb-1">Ask your feedback</h2>
+      <p className="text-sm text-muted mb-5">
         Answers are grounded only in the real feedback you've uploaded, with
         clear citations.
       </p>
 
-      <div className="flex gap-3 mb-3">
+      <div className="flex gap-3 mb-3 max-w-lg">
         <label className="text-xs text-muted flex-1">
           from
           <input
@@ -87,7 +87,7 @@ export default function SearchPage() {
         </label>
       </div>
 
-      <div className="flex gap-2">
+      <div className="flex gap-2 max-w-lg">
         <input
           type="text"
           value={question}
@@ -99,7 +99,7 @@ export default function SearchPage() {
         <button
           onClick={() => ask()}
           disabled={busy}
-          className="px-4 py-2 text-sm bg-ink text-paper rounded hover:bg-ochreDeep transition-colors disabled:opacity-40"
+          className="px-4 py-2 text-sm bg-ochre text-paper rounded hover:bg-ochreDeep transition-colors disabled:opacity-40"
         >
           {busy ? "…" : "Ask"}
         </button>
@@ -110,7 +110,7 @@ export default function SearchPage() {
           <button
             key={ex}
             onClick={() => ask(ex)}
-            className="text-xs px-2 py-1 border hairline rounded text-muted hover:text-ink hover:border-ink"
+            className="text-xs px-2 py-1 border hairline rounded text-muted hover:text-ochre hover:border-ochre"
           >
             {ex}
           </button>
@@ -120,7 +120,7 @@ export default function SearchPage() {
       {error && <p className="text-rust text-sm mt-4">{error}</p>}
 
       {result && (
-        <div className="mt-8">
+        <div className="mt-8 max-w-2xl">
           <div className="border hairline rounded p-4 bg-panel">
             <p className="font-mono text-[11px] text-muted mb-2">answer</p>
             <AnsweredText text={result.answer} />

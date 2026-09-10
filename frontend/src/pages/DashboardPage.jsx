@@ -1,4 +1,4 @@
-import { Fragment, useEffect, useState } from "react";
+import { useEffect, useState } from "react";
 import { api } from "../api.js";
 import TrendChart from "../components/TrendChart.jsx";
 
@@ -48,7 +48,7 @@ export default function DashboardPage() {
   if (themes.length === 0) {
     return (
       <div className="border hairline rounded p-8 text-center">
-        <p className="font-serif text-xl mb-1">No themes yet</p>
+        <p className="text-lg font-medium mb-1">No themes yet</p>
         <p className="text-sm text-muted">
           Go to "Upload feedback" to add your first entries.
         </p>
@@ -61,89 +61,71 @@ export default function DashboardPage() {
 
   return (
     <div>
-      <div className="flex items-baseline justify-between mb-4">
-        <h2 className="font-serif text-2xl">Discovered themes</h2>
-        <p className="font-mono text-xs text-muted">
+      <div className="flex items-baseline justify-between mb-5">
+        <h2 className="text-lg font-medium">Discovered themes</h2>
+        <p className="text-xs text-muted">
           {themes.length} themes · {total} entries total
         </p>
       </div>
 
-      <table className="w-full text-sm border-collapse">
-        <thead>
-          <tr className="border-b hairline text-left text-xs text-muted">
-            <th className="py-2 font-normal">Theme</th>
-            <th className="py-2 font-normal w-40">Share</th>
-            <th className="py-2 font-normal w-16 text-right">Count</th>
-          </tr>
-        </thead>
-        <tbody>
-          {sorted.map((t) => {
-            const pct = total ? Math.round((t.entry_count / total) * 100) : 0;
-            const isOpen = expandedId === t.id;
-            return (
-              <Fragment key={t.id}>
-                <tr
-                  onClick={() => setExpandedId(isOpen ? null : t.id)}
-                  className="border-b hairline cursor-pointer hover:bg-panel transition-colors"
-                >
-                  <td className="py-3 pr-4">
-                    <div className="flex items-center gap-2">
-                      {t.is_recently_discovered && (
-                        <span
-                          title="Recently discovered theme"
-                          className="w-1.5 h-1.5 rounded-full bg-ochre shrink-0"
-                        />
-                      )}
-                      <span className="font-medium">{t.label}</span>
-                    </div>
-                    {t.summary && (
-                      <p className="text-xs text-muted mt-0.5">{t.summary}</p>
-                    )}
-                  </td>
-                  <td className="py-3 pr-4">
-                    <div className="h-1.5 bg-line rounded overflow-hidden">
-                      <div
-                        className="h-full bg-ochre"
-                        style={{ width: `${pct}%` }}
+      <div className="space-y-0.5">
+        {sorted.map((t) => {
+          const isOpen = expandedId === t.id;
+          return (
+            <div key={t.id}>
+              <div
+                onClick={() => setExpandedId(isOpen ? null : t.id)}
+                className={`flex items-center gap-3 pl-4 pr-2 py-3.5 cursor-pointer hover:bg-panel hover:border-ochre transition-colors border-l-2 ${
+                  isOpen ? "border-ochre" : "border-line"
+                }`}
+              >
+                <div className="flex-1">
+                  <div className="flex items-center gap-2">
+                    {t.is_recently_discovered && (
+                      <span
+                        title="Recently discovered theme"
+                        className="w-1.5 h-1.5 rounded-full bg-ochre shrink-0"
                       />
-                    </div>
-                  </td>
-                  <td className="py-3 text-right font-mono">{t.entry_count}</td>
-                </tr>
-                {isOpen && (
-                  <tr className="border-b hairline">
-                    <td colSpan={3} className="pb-6 pt-2">
-                      <div className="flex gap-2 mb-2">
-                        {GRANULARITIES.map((g) => (
-                          <button
-                            key={g.key}
-                            onClick={(e) => {
-                              e.stopPropagation();
-                              setGranularity(g.key);
-                            }}
-                            className={`text-xs px-2 py-1 rounded border hairline ${
-                              granularity === g.key
-                                ? "bg-ink text-paper border-ink"
-                                : "text-muted hover:text-ink"
-                            }`}
-                          >
-                            {g.label}
-                          </button>
-                        ))}
-                      </div>
-                      {trendLoading ? (
-                        <p className="text-xs text-muted">loading…</p>
-                      ) : (
-                        trend && <TrendChart points={trend.points} granularity={granularity} />
-                      )}
-                    </td>
-                  </tr>
-                )}
-              </Fragment>
-            );
-          })}
-        </tbody>
-      </table>
+                    )}
+                    <span className="text-sm font-medium">{t.label}</span>
+                  </div>
+                  {t.summary && (
+                    <p className="text-xs text-muted mt-0.5">{t.summary}</p>
+                  )}
+                </div>
+                <span className="font-mono text-sm text-muted">{t.entry_count}</span>
+              </div>
+              {isOpen && (
+                <div className="pl-4 pb-5 pt-1 border-l-2 border-line">
+                  <div className="flex gap-2 mb-2">
+                    {GRANULARITIES.map((g) => (
+                      <button
+                        key={g.key}
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          setGranularity(g.key);
+                        }}
+                        className={`text-xs px-2 py-1 rounded border hairline ${
+                          granularity === g.key
+                            ? "bg-ochre text-paper border-ochre"
+                            : "text-muted hover:text-ochre hover:border-ochre"
+                        }`}
+                      >
+                        {g.label}
+                      </button>
+                    ))}
+                  </div>
+                  {trendLoading ? (
+                    <p className="text-xs text-muted">loading…</p>
+                  ) : (
+                    trend && <TrendChart points={trend.points} granularity={granularity} />
+                  )}
+                </div>
+              )}
+            </div>
+          );
+        })}
+      </div>
     </div>
   );
 }

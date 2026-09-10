@@ -1,18 +1,18 @@
 @import "tailwindcss";
 
 @theme {
-  --color-paper: #F2F4F1;
-  --color-panel: #FFFFFF;
-  --color-ink: #16222B;
-  --color-muted: #5B6B70;
-  --color-line: #DBDFDA;
-  --color-ochre: #B8862B;
-  --color-ochreDeep: #8F6A20;
-  --color-rust: #A24E44;
-  --color-moss: #3E6259;
+  --color-paper: #FFFFFF;
+  --color-panel: #FAFAFA;
+  --color-ink: #0A0A0A;
+  --color-muted: #8B8D98;
+  --color-line: #EBEBEB;
+  --color-ochre: #1E3A5F;
+  --color-ochreDeep: #16293F;
+  --color-rust: #DC2626;
+  --color-moss: #16A34A;
 
-  --font-serif: "Source Serif 4", Georgia, serif;
-  --font-sans: Inter, system-ui, sans-serif;
+  --font-serif: "Work Sans", system-ui, sans-serif;
+  --font-sans: "Work Sans", system-ui, sans-serif;
   --font-mono: "IBM Plex Mono", ui-monospace, monospace;
 }
 
@@ -25,12 +25,12 @@ body {
 }
 
 ::selection {
-  background: #b8862b33;
+  background: #1e3a5f33;
 }
 
 .masthead-rule {
-  border-top: 1px solid var(--color-ink);
-  border-bottom: 3px solid var(--color-ink);
+  border-top: none;
+  border-bottom: 1px solid var(--color-line);
 }
 
 .hairline {
@@ -40,6 +40,6 @@ body {
 input:focus-visible,
 textarea:focus-visible,
 button:focus-visible {
-  outline: 2px solid var(--color-ochre);
-  outline-offset: 2px;
+  outline: 1px solid var(--color-ochre);
+  outline-offset: 1px;
 }

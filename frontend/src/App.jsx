@@ -14,12 +14,9 @@ export default function App() {
     <div className="min-h-screen flex flex-col">
       <header className="masthead-rule bg-paper px-6 pt-6 pb-3 md:px-10">
         <div className="max-w-6xl mx-auto flex items-baseline justify-between flex-wrap gap-2">
-          <h1 className="font-serif text-3xl md:text-4xl tracking-tight">
+          <h1 className="font-sans text-3xl md:text-4xl font-normal">
             Feedback Explorer
           </h1>
-          <p className="font-mono text-xs text-muted">
-            themes are discovered automatically from the text — no fixed category list
-          </p>
         </div>
       </header>
 
@@ -37,7 +34,6 @@ export default function App() {
                 }`
               }
             >
-              <span className="font-mono text-[11px] text-muted">{t.num}</span>
               {t.label}
             </NavLink>
           ))}
@@ -56,9 +52,6 @@ export default function App() {
       </main>
 
       <footer className="border-t hairline px-6 md:px-10 py-4">
-        <p className="max-w-6xl mx-auto font-mono text-[11px] text-muted">
-          local embeddings · incremental clustering · answers grounded in real quotes
-        </p>
       </footer>
     </div>
   );
