@@ -7,27 +7,29 @@ A system that ingests customer feedback as free text with timestamps, automatica
 frontend (React + Vite) --HTTP--> backend (FastAPI) --SQL/vector--> Postgres + pgvector
                                        |
                                        |-- sentence-transformers (embeddings, local)
-                                       `-- Groq API (theme labeling + grounded Q&A)
+                                       `-- Groq API (theme discovery, labeling, grounded Q&A)
 
 Backend: Python / FastAPI
 Database: PostgreSQL with the pgvector extension (embeddings + cosine search directly in SQL)
 Embeddings: sentence-transformers (all-MiniLM-L6-v2) - local, free, runs on CPU
-LLM: Groq (Llama-family open models via an OpenAI-compatible API) - used only for (1) labeling discovered themes and (2) generating grounded analytical answers
+LLM: Groq (Llama-family open models via an OpenAI-compatible API) - used for (1) discovering and labeling themes from unclassified feedback, and (2) generating grounded analytical answers
 Frontend: React + Vite + Tailwind CSS v4 + Recharts
 
 ### Why this stack (trade-offs)
 
-- Local embeddings vs. API-based: sentence-transformers is free, runs offline, and needs no API key to ingest data - good for local development and demos. The LLM stays API-based (Groq) because label quality and natural-language reasoning are noticeably better than small local models, while Groq's free tier and LPU-based inference keep it fast and cost-free.
+- Local embeddings vs. API-based: sentence-transformers is free, runs offline, and needs no API key to ingest data - good for local development and demos. The LLM stays API-based (Groq) because it reasons about topic boundaries and natural language far better than distance-based methods on a small embedding model, while Groq's free tier and LPU-based inference keep it fast and cost-free.
 - PostgreSQL + pgvector vs. a dedicated vector DB: allows semantic search (ORDER BY embedding <=> query_embedding) to be combined directly with normal SQL filters (date range, theme), without needing a separate vector database.
 
 ## How themes are discovered (no predefined list)
 
-1. New feedback entry -> an embedding is generated -> compared (cosine similarity, via pgvector) against every existing theme's centroid.
+1. New feedback entry -> an embedding is generated (sentence-transformers, local model) -> compared (cosine similarity, via pgvector) against every existing theme's centroid.
 2. If the similarity passes a threshold (CLUSTER_SIMILARITY_THRESHOLD, default 0.62) -> the entry joins that theme and its centroid is updated in place using a running-mean formula - O(1), never recomputing clusters from scratch (bonus requirement: incremental update).
 3. If no theme is similar enough -> the entry stays unclassified, in a "pool".
-4. When the pool has enough entries, discover_new_themes() clusters just that pool (agglomerative clustering with average linkage on cosine distance, then a purification pass that drops any member too far from its cluster's true centroid) and labels each accepted group with Groq (bonus requirement: new theme detection). The dashboard marks any theme created in the last 7 days with a small dot.
+4. When the pool has enough entries, discover_new_themes() asks the LLM (Groq) to group the pool directly into coherent themes by reading the actual text - this gives materially better topic separation than distance-based clustering on a small embedding model, since a language model understands semantic boundaries (e.g. distinguishing "billing complaints" from "shipping complaints") far more reliably than raw vector geometry. Large pools are first pre-grouped with K-Means on their embeddings so each batch sent to the LLM only contains related entries. Before creating a new theme, its label is checked against existing theme labels to avoid creating near-duplicate themes for the same underlying topic. The dashboard marks any theme created in the last 7 days with a small dot (bonus requirement: new theme detection).
 
 This avoids two common problems: (a) recomputing the full clustering on every new entry (expensive), and (b) forcing every new entry into an existing theme even when it's genuinely something new.
+
+Embeddings remain the backbone of the incremental-update path (steps 1-2 above) - the LLM is used specifically where semantic judgment matters most: deciding topic boundaries when discovering themes for the first time.
 
 ## Grounded analytical answers
 
@@ -58,7 +60,7 @@ backend/
       embeddings.py            sentence-transformers wrapper
       clustering.py             assign_entry, discover_new_themes
       analytics.py               semantic_search, get_theme_trend
-      llm.py                      generate_theme_label, answer_grounded_question (Groq)
+      llm.py                      theme discovery, labeling, grounded Q&A (Groq)
 frontend/
   src/
     pages/                UploadPage, DashboardPage, SearchPage
