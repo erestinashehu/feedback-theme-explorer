@@ -20,7 +20,7 @@ def _call_groq(prompt: str, max_retries: int = 4) -> str:
                 json={
                     "model": settings.groq_model,
                     "messages": [{"role": "user", "content": prompt}],
-                    "temperature": 0.3,
+                    "temperature": 0,
                 },
                 timeout=30,
             )
@@ -100,3 +100,81 @@ Instructions:
 """
 
     return _call_groq(prompt)
+
+
+def verify_cluster_membership(label: str, entries: list[dict]) -> set[int]:
+    """Ask the LLM to double-check which entries genuinely belong to a
+    proposed theme. Returns the set of ref_ids that should be KEPT.
+    This catches embedding-similarity false positives (e.g. two sentences
+    with similar grammatical structure but unrelated topics) that a small
+    embedding model can miss but an LLM immediately recognizes."""
+
+    listed = "\n".join(f"{e['ref_id']}: {e['content']}" for e in entries)
+
+    prompt = f"""A clustering algorithm grouped these customer feedback comments
+under the proposed theme label "{label}":
+
+{listed}
+
+Some comments may have been grouped incorrectly (they don't actually relate
+to this theme, even if the wording looks superficially similar).
+
+Return ONLY a JSON object with this exact shape, no other text:
+{{"keep_ids": [list of the numeric ids that GENUINELY belong to "{label}"]}}
+
+Be strict: only keep an id if it truly discusses the same topic as the theme label.
+"""
+
+    text = _call_groq(prompt)
+    text = text.removeprefix("```json").removeprefix("```").removesuffix("```").strip()
+
+    start = text.find("{")
+    end = text.rfind("}")
+    if start != -1 and end != -1:
+        text = text[start : end + 1]
+
+    try:
+        data = json.loads(text)
+        return set(int(i) for i in data.get("keep_ids", []))
+    except (json.JSONDecodeError, ValueError, TypeError):
+        return {e["ref_id"] for e in entries}
+
+
+def cluster_pool_directly(entries: list[dict]) -> list[dict]:
+    """Ask the LLM to group a pool of unclassified feedback entries into
+    coherent themes directly, rather than relying on embedding-distance
+    thresholds. An LLM understands topic boundaries far more reliably than
+    geometric clustering on a small embedding model, especially for
+    correctly separating adjacent-but-distinct topics."""
+
+    listed = "\n".join(f"{e['ref_id']}: {e['content']}" for e in entries)
+
+    prompt = f"""Group these customer feedback comments into coherent themes.
+Each theme should have at least 3 comments and cover ONE clear, specific topic.
+Do not mix unrelated topics into the same theme. Leave out any comment that
+doesn't clearly fit a group of at least 3 similar comments.
+
+COMMENTS:
+{listed}
+
+Return ONLY a JSON object, no other text, in this exact shape:
+{{"themes": [
+  {{"label": "short 2-4 word label in ENGLISH", "summary": "one sentence in ENGLISH", "entry_ids": [list of numeric ids]}}
+]}}
+"""
+
+    text = _call_groq(prompt)
+    print(f"DEBUG raw Groq response:\n{text}\n---END---")
+    text = text.removeprefix("```json").removeprefix("```").removesuffix("```").strip()
+
+    start = text.find("{")
+    end = text.rfind("}")
+    if start != -1 and end != -1:
+        text = text[start : end + 1]
+
+    try:
+        data = json.loads(text)
+        return data.get("themes", [])
+    except (json.JSONDecodeError, TypeError) as exc:
+        print(f"DEBUG JSON parse failed: {exc}")
+        return []

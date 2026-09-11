@@ -1,11 +1,10 @@
 import numpy as np
-from sklearn.cluster import AgglomerativeClustering
 from sqlalchemy.orm import Session
 
 from app.config import settings
 from app.models import Theme, FeedbackEntry
 from app.services.embeddings import cosine_similarity
-from app.services.llm import generate_theme_label
+from app.services.llm import cluster_pool_directly
 
 
 def find_best_matching_theme(db: Session, embedding: list[float]) -> tuple[Theme | None, float]:
@@ -44,83 +43,70 @@ def assign_entry(db: Session, entry: FeedbackEntry) -> bool:
     return False
 
 
-def _cluster_pass(pool: list[FeedbackEntry], embeddings: np.ndarray) -> list[np.ndarray]:
-    """One clustering + purification pass. Returns a list of boolean masks,
-    one per accepted theme, into the given pool/embeddings arrays."""
-
-    # Cluster loosely first (linkage chaining catches distant-but-related
-    # items), then purify each group against its own true centroid so
-    # members that don't actually belong get excluded rather than forcing
-    # an impure label on the whole group.
-    clusterer = AgglomerativeClustering(
-        n_clusters=None,
-        distance_threshold=0.75,
-        linkage="average",
-        metric="cosine",
-    )
-    labels = clusterer.fit_predict(embeddings)
-
-    accepted_masks = []
-
-    for cluster_id in sorted(set(labels)):
-        member_mask = labels == cluster_id
-        if member_mask.sum() < settings.min_entries_for_new_theme:
-            continue
-
-        cluster_embeddings = embeddings[member_mask]
-        rough_centroid = cluster_embeddings.mean(axis=0)
-
-        norms = np.linalg.norm(cluster_embeddings, axis=1) * np.linalg.norm(rough_centroid)
-        norms[norms == 0] = 1e-9
-        similarities = (cluster_embeddings @ rough_centroid) / norms
-
-        keep = similarities >= settings.cluster_similarity_threshold
-        if keep.sum() < settings.min_entries_for_new_theme:
-            continue
-
-        full_mask = np.zeros(len(embeddings), dtype=bool)
-        full_mask[np.where(member_mask)[0][keep]] = True
-        accepted_masks.append(full_mask)
-
-    return accepted_masks
-
-
 def discover_new_themes(db: Session) -> list[Theme]:
+    pool = db.query(FeedbackEntry).filter(FeedbackEntry.theme_id.is_(None)).all()
+
+    if len(pool) < settings.min_entries_for_new_theme:
+        return []
+
+    pool_by_id = {e.id: e for e in pool}
+    payload = [{"ref_id": e.id, "content": e.content} for e in pool]
+
+    proposed_themes = cluster_pool_directly(payload)
+
     new_themes: list[Theme] = []
 
-    for _ in range(5):  # safety cap: at most 5 refinement rounds per call
-        pool = db.query(FeedbackEntry).filter(FeedbackEntry.theme_id.is_(None)).all()
-        if len(pool) < settings.min_entries_for_new_theme:
-            break
+    for proposed in proposed_themes:
+        entry_ids = proposed.get("entry_ids", [])
+        members = [pool_by_id[i] for i in entry_ids if i in pool_by_id]
 
-        embeddings = np.array([list(e.embedding) for e in pool])
-        masks = _cluster_pass(pool, embeddings)
+        if len(members) < settings.min_entries_for_new_theme:
+            continue
 
-        if not masks:
-            break
+        proposed_label = proposed.get("label", "new theme")
 
-        for mask in masks:
-            members = [m for m, keep in zip(pool, mask) if keep]
-            member_embeddings = embeddings[mask]
-            centroid = member_embeddings.mean(axis=0)
+        # If a theme with this exact label already exists, merge into it
+        # instead of creating a duplicate - the LLM can independently
+        # arrive at the same name for a group that embeddings judged
+        # "not quite similar enough" to auto-merge on its own.
+        existing = (
+            db.query(Theme)
+            .filter(Theme.label.ilike(proposed_label))
+            .first()
+        )
 
-            label_info = generate_theme_label([m.content for m in members])
+        member_embeddings = np.array([list(m.embedding) for m in members])
 
-            theme = Theme(
-                label=label_info.get("label", "new theme"),
-                summary=label_info.get("summary"),
-                centroid=centroid.tolist(),
-                entry_count=len(members),
-            )
-            db.add(theme)
-            db.flush()
-
+        if existing is not None:
             for member in members:
-                member.theme_id = theme.id
+                member.theme_id = existing.id
+                _update_centroid_incremental(existing, list(member.embedding))
                 db.add(member)
+            db.add(existing)
+            continue
 
-            new_themes.append(theme)
+        centroid = member_embeddings.mean(axis=0)
 
+        theme = Theme(
+            label=proposed_label,
+            summary=proposed.get("summary"),
+            centroid=centroid.tolist(),
+            entry_count=len(members),
+        )
+        db.add(theme)
         db.flush()
+
+        for member in members:
+            member.theme_id = theme.id
+            db.add(member)
+
+        new_themes.append(theme)
+
+    db.flush()
+
+    if new_themes:
+        leftover = db.query(FeedbackEntry).filter(FeedbackEntry.theme_id.is_(None)).all()
+        for entry in leftover:
+            assign_entry(db, entry)
 
     return new_themes
